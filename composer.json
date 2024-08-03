@@ -1,0 +1,19 @@
+{
+    "name": "blank/telegram-chastity-bot",
+    "description": "A Telegram bot for managing chastity events",
+    "version": "1.0.0",
+    "require": {
+        "php": "^7.4 || ^8.0",
+        "vlucas/phpdotenv": "^5.3",
+        "ext-mysqli": "*",
+      "ext-json": "*",
+      "ext-pdo": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Blank\\TelegramChastityBot\\": "src/"
+        }
+    },
+    "license": "MIT",
+    "minimum-stability": "stable"
+}
