@@ -145,7 +145,12 @@ if (isset($update['message']['new_chat_members'])) {
             $response = 'Welcome to the bot!';
             break;
         case '/help':
-            $response = 'How can I assist you?';
+            $response = '/help - Prints this messaage.
+            /points - Check how many points you have.
+            /verify - Tells you how to verfiy.
+            /register - Registers you with the bot. 
+            /getcode - Get the current code.
+            /id - Prints your User ID and the Group ID(if in a group)';
             break;
         case '/points':
             $user_points = getUserPoints($user_id);
@@ -156,7 +161,7 @@ if (isset($update['message']['new_chat_members'])) {
             $response = registerUser($user_id, $username);
             break;
         case '/verify':
-            $response = 'Please send a photo with your verification code in the caption.';
+            $response = 'Please send a photo with the verification code written somewhere in the image.';
             break;
         case '/getcode':
             $code = getDailyCode(); // Fetch today's verification code
