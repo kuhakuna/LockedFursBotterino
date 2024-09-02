@@ -1,129 +1,199 @@
 <?php
-require '../vendor/autoload.php';
-include '../config/db.php'; // Include the PDO connection file
-include '../config/.env';
-include 'scripts/database.php';
-include 'scripts/daily_code.php';
+require __DIR__ . '/vendor/autoload.php'; // Load Composer's autoload file
+include '../config/db.php'; // Include PDO connection setup
+include '../scripts/daily_code.php'; // Include other necessary scripts
 
 // Load environment variables from the .env file
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../config');
 $dotenv->load();
 
-// Load environment variables
-$bot_token = $_ENV['BOT_TOKEN'];
 $blank_chat_id = $_ENV['BLANK_CHAT_ID'];
-$verification_room_id = $_ENV['VERIFIER_CHAT_ID'];
-$chastity_room_id = $_ENV['CHASTITY_CHAT_ID'];
-
+$bot_token = $_ENV['BOT_TOKEN'];
+$chastity_room_id = $_ENV['CHASTITY_ROOM_ID']; // Ensure all environment variables are set correctly
 $website = 'https://api.telegram.org/bot' . $bot_token;
 
-// Retrieve incoming updates
-$content = file_get_contents("php://input");
-$update = json_decode($content, true);
+// Function to retrieve user information
+function getUserFullInfo($chat_id) {
+    global $website;
+    $url = $website . "/getChat?chat_id=" . $chat_id;
 
-if (isset($update['message'])) {
-    $chatId = $update['message']['chat']['id'];
-    $messageText = $update['message']['text'] ?? '';
-    $messageId = $update['message']['message_id'];
+    $response = file_get_contents($url);
+    $result = json_decode($response, true);
 
-    if (strpos($messageText, '/code') === 0) {
-        // Handle /code command to echo remaining text
-        $remainingText = trim(str_replace('/code', '', $messageText));
+    // Return user info if the request was successful
+    if ($result['ok']) {
+        return $result['result'];
+    } else {
+        return null;
+    }
+}
 
-        if (!empty($remainingText)) {
-            sendMessage($chatId, "Echo: " . $remainingText, $messageId, $bot_token);
+// Function to send a message to a Telegram chat
+function sendMessage($chat_id, $message, $reply_markup = null) {
+    global $website;
+    $url = $website . "/sendMessage?chat_id=" . $chat_id . "&text=" . urlencode($message);
+    if ($reply_markup) {
+        $url .= "&reply_markup=" . urlencode(json_encode($reply_markup));
+    }
+    file_get_contents($url); // Consider switching to curl for better error handling
+}
+
+
+
+// Function to handle incoming messages
+function processMessage($message)
+{
+    global $blank_chat_id, $chastity_room_id;
+
+    // Check if the message is a command
+    if (isset($message['entities']) && $message['entities'][0]['type'] == 'bot_command') {
+        $command = substr($message['text'], 1, $message['entities'][0]['length'] - 1);
+        $command = explode('@', $command)[0]; // Remove the bot name if it was included
+
+        // Handle the command
+        switch ($command) {
+            case 'start':
+                sendMessage($message['chat']['id'], "Welcome to the Chastity Bot! Type /help for a list of available commands.");
+                break;
+            case 'help':
+                sendMessage($message['chat']['id'], "Available commands:\n\n" .
+                    "/start - Start the bot\n" .
+                    "/help - Show this help message\n" .
+                    "/code - Get today's code\n" .
+                    "/submit - Submit a code\n" .
+                    "/status - Check your chastity status\n" .
+                    "/reset - Reset your chastity status\n" .
+                    "/lock - Lock yourself in chastity\n" .
+                    "/unlock - Unlock yourself from chastity\n" .
+                    "/rules - Show the rules\n" .
+                    "/about - Show information about the bot\n" .
+                    "/feedback - Send feedback to the bot creator\n" .
+                    "/report - Report a user for breaking the rules\n" .
+                    "/admin - Show admin commands (admins only)");
+                break;
+            case 'code':
+                $code = getDailyCode();
+                sendMessage($message['chat']['id'], "Today's code is: " . $code);
+                break;
+            case 'submit':
+                sendMessage($message['chat']['id'], "Please send your code in the format /submit <code>");
+                break;
+            case 'status':
+                $status = getUserStatus($message['chat']['id']);
+                if ($status) {
+                    sendMessage($message['chat']['id'], "Your chastity status is: " . $status);
+                } else {
+                    sendMessage($message['chat']['id'], "You are not currently locked in chastity.");
+                }
+                break;
+            case 'reset':
+                resetUserStatus($message['chat']['id']);
+                sendMessage($message['chat']['id'], "Your chastity status has been reset.");
+                break;
+            case 'lock':
+                $status = getUserStatus($message['chat']['id']);
+                if ($status) {
+                    sendMessage($message['chat']['id'], "You are already locked in chastity.");
+                } else {
+                    lockUser($message['chat']['id']);
+                    sendMessage($message['chat']['id'], "You have been locked in chastity.");
+                }
+                break;
+            case 'unlock':
+                $status = getUserStatus($message['chat']['id']);
+                if ($status) {
+                    unlockUser($message['chat']['id']);
+                    sendMessage($message['chat']['id'], "You have been unlocked from chastity.");
+                } else {
+                    sendMessage($message['chat']['id'], "You are not currently locked in chastity.");
+                }
+                break;
+            case 'rules':
+                sendMessage($message['chat']['id'], "The rules are:\n\n" .
+                    "1. You must be locked in chastity to participate.\n" .
+                    "2. You must submit the daily code every day.\n" .
+                    "3. You must not share the daily code with anyone else.\n" .
+                    "4. You must not unlock yourself from chastity without permission.\n" .
+                    "5. You must not use any loopholes to cheat the system.\n" .
+                    "6. You must not harass or bully other users.\n" .
+                    "7. You must not send explicit or inappropriate content in the chat.\n" .
+                    "8. You must not engage in any illegal activities.\n" .
+                    "9. You must follow the instructions of the bot and the admins at all times.\n" .
+                    "10. Breaking any of these rules may result in a temporary or permanent ban from the bot.");
+                break;
+            case 'about':
+                sendMessage($message['chat']['id'], "The Chastity Bot was created by [Your Name] as a fun way to explore chastity and self-control. If you have any feedback or suggestions, please use the /feedback command to send a message to the bot creator.");
+                break;
+            case 'feedback':
+                sendMessage($message['chat']['id'], "Please enter your feedback or suggestions:");
+                break;
+            case 'report':
+                sendMessage($message['chat']['id'], "Please enter the username of the user you want to report:");
+                break;
+            case 'admin':
+                sendMessage($message['chat']['id'], "Available admin commands:\n\n" .
+                    "/broadcast - Send a message to all users\n" .
+                    "/ban - Ban a user from the bot\n" .
+                    "/unban - Unban a user from the bot\n" .
+                    "/kick - Kick a user from the bot\n" .
+                    "/promote - Promote a user to admin\n" .
+                    "/demote - Demote an admin\n" .
+                    "/setroom - Set the chat room for the bot\n" .
+                    "/setblank - Set the blank chat for the bot\n" .
+                    "/setcode - Set the daily code\n" .
+                    "/resetcode - Reset the daily code\n" .
+                    "/resetall - Reset all user statuses\n" .
+                    "/stats - Show bot statistics");
+                break;
+            default:
+                sendMessage($message['chat']['id'], "Invalid command. Type /help for a list of available commands.");
+                break;
+        }
+    } else {
+        // Handle non-command messages
+        $status = getUserStatus($message['chat']['id']);
+        if ($status) {
+            // Check if the message is the daily code
+            if ($message['text'] == $status) {
+                // Check if the user has already submitted the code today
+                if (hasUserSubmitted($message['chat']['id'])) {
+                    sendMessage($message['chat']['id'], "You have already submitted today's code.");
+                } else {
+                    // Add the code to the database and update the user's status
+                    submitCode($message['chat']['id'], $message['text']);
+                    updateStatus($message['chat']['id'], null);
+                    sendMessage($message['chat']['id'], "Code submitted successfully. You are now unlocked from chastity.");
+                }
+            } else {
+                sendMessage($message['chat']['id'], "Incorrect code. Please try again.");
+            }
         } else {
-            sendMessage($chatId, 'Please provide text after the /code command.', $messageId, $bot_token);
+            // Check if the message is a feedback or report
+            if ($message['text'] == '/feedback') {
+                sendMessage($message['chat']['id'], "Please enter your feedback or suggestions:");
+            } elseif ($message['text'] == '/report') {
+                sendMessage($message['chat']['id'], "Please enter the username of the user you want to report:");
+            } else {
+                sendMessage($message['chat']['id'], "Invalid command. Type /help for a list of available commands.");
+            }
         }
     }
-
-    if (isset($update['message']['photo'])) {
-        // Forward the image to the verification room
-        forwardMessage($chastity_room_id, $messageId, $verification_room_id, $bot_token);
-
-        // Send inline keyboard to verification room
-        $keyboard = [
-            'inline_keyboard' => [
-                [
-                    ['text' => 'Accept', 'callback_data' => 'accept'],
-                    ['text' => 'Deny', 'callback_data' => 'deny'],
-                    ['text' => 'Logic Failure', 'callback_data' => 'logic_failure']
-                ]
-            ]
-        ];
-
-        sendMessage($verification_room_id, 'Please review the image:', null, $bot_token, json_encode($keyboard));
-    }
-}
-if (isset($update['callback_query'])) {
-    $callbackData = $update['callback_query']['data'];
-    $callbackChatId = $update['callback_query']['message']['chat']['id'];
-    $callbackMessageId = $update['callback_query']['message']['message_id'];
-
-    switch ($callbackData) {
-        case 'accept':
-            sendMessage($callbackChatId, 'Image accepted.', $callbackMessageId, $bot_token);
-            break;
-        case 'deny':
-            sendMessage($callbackChatId, 'Image denied.', $callbackMessageId, $bot_token);
-            break;
-        case 'logic_failure':
-            sendMessage($callbackChatId, 'Logic failure: Image contains prohibited content.', $callbackMessageId, $bot_token);
-            break;
-    }
-
-    answerCallbackQuery($update['callback_query']['id'], $bot_token);
 }
 
-// Function to send a message
-function sendMessage($chatId, $text, $replyToMessageId = null, $botToken, $replyMarkup = null)
-{
-    $url = "https://api.telegram.org/bot$botToken/sendMessage";
-    $postData = [
-        'chat_id' => $chatId,
-        'text' => $text,
-        'reply_to_message_id' => $replyToMessageId,
-        'reply_markup' => $replyMarkup
-    ];
+// Function to handle feedback messages
+function processFeedback($message) {
+    global $blank_chat_id;
 
-    makeRequest($url, $postData);
+    // Send the feedback to the bot creator
+    sendMessage($blank_chat_id, "Feedback from user " . $message['chat']['username'] . ":\n\n" . $message['text']);
+    sendMessage($message['chat']['id'], "Thank you for your feedback. It has been sent to the bot creator.");
 }
 
-// Function to forward a message
-function forwardMessage($fromChatId, $messageId, $toChatId, $botToken)
-{
-    $url = "https://api.telegram.org/bot$botToken/forwardMessage";
-    $postData = [
-        'chat_id' => $toChatId,
-        'from_chat_id' => $fromChatId,
-        'message_id' => $messageId
-    ];
+// Function to handle report messages
+function processReport($message) {
+    global $blank_chat_id;
 
-    makeRequest($url, $postData);
+    // Send the report to the bot creator
+    sendMessage($blank_chat_id, "Report from user " . $message['chat']['username'] . ":\n\n" . $message['text']);
+    sendMessage($message['chat']['id'], "Thank you for your report. It has been sent to the bot creator.");
 }
-
-// Function to handle callback query
-function answerCallbackQuery($callbackQueryId, $botToken)
-{
-    $url = "https://api.telegram.org/bot$botToken/answerCallbackQuery";
-    $postData = [
-        'callback_query_id' => $callbackQueryId
-    ];
-
-    makeRequest($url, $postData);
-}
-
-// Generic function to make a request to the Telegram API
-function makeRequest($url, $postData)
-{
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
-    $response = curl_exec($ch);
-    curl_close($ch);
-
-    return json_decode($response, true);
-}
-?>
